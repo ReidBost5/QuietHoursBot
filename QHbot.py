@@ -12,6 +12,8 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 
 bot = commands.Bot(command_prefix = '.ff ', intents = discord.Intents.all(), help_command = None)
 
+guildname = None
+
 @bot.event
 async def on_ready():
 
@@ -26,23 +28,48 @@ async def on_ready():
         print(e)
 
 #getters and setters for global Variables (Log Channel ID, Roles Excempt from Quiet Hours, etc.)
+def setGuildname(servername):
+
+    global guildname
+    guildname = servername
+
 def setLog(ID):
 
     ID = (str)(ID)
-    f = open("information.txt", "w")
-    f.write(ID)
+    f = open("%s.txt" % guildname, "a")
+    f.write(f"Log Channel: {ID}\n")
     f.close()
 
 def getLogChannel():
 
-    f = open("information.txt", "r")
-    ID = f.readline()
+    f = open("%s.txt" % guildname, "r")
+
+    ID = None
+
+    while ID != '':
+
+        ID = f.readline()
+        index = ID.find("Log Channel: ")
+
+        if index != -1:
+
+            log = ID[12:]
+
     f.close()
 
-    return ID
+    return log
 
 def setHours(tz, startHour, endHour):
-    pass
+    
+    start = (str)(startHour)
+    timezone = (str)(tz)
+    end = (str)(endHour)
+
+    f = open("%s.txt" % guildname, "a")
+    f.write(f"Start Time: {start}\n")
+    f.write(f"End Time: {end}\n")
+    f.write(f"Timezone: {timezone}\n")
+    f.close()
 
 def getEndHour():
     pass
@@ -57,7 +84,13 @@ async def setup(interaction: discord.Interaction, log: discord.TextChannel, star
 
     if interaction.user.guild_permissions.administrator:
 
+        setGuildname(interaction.guild)
+
         log = log.id
+
+        if os.path.exists("%s.txt" % guildname):
+
+            os.remove("%s.txt" % guildname)
 
         setLog(log)
 
@@ -80,9 +113,13 @@ Quiet Hours Start Time: {start}\nQuiet Hours End Time: {end}\n------------------
 @bot.event
 async def on_message(ctx):
 
+    global guildname
+    guildname = ctx.guild.name
+
     logs_channel = await bot.fetch_channel(getLogChannel())
 
     if ctx.author != bot.user:
+
         msgTime = ctx.created_at
         msgTime = msgTime.strftime("%H")
 
