@@ -4,15 +4,24 @@ from discord.ext import commands
 import os
 from dotenv import load_dotenv
 import random
-import datetime
+from datetime import timedelta, timezone, datetime
+import pytz
+from typing import Literal, Union, NamedTuple
+from dateutil.tz import gettz
 
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-bot = commands.Bot(command_prefix = '.ff ', intents = discord.Intents.all(), help_command = None)
+bot = commands.Bot(command_prefix = '.qh ', intents = discord.Intents.all(), help_command = None)
 
+#Global Variables (server names and timezone offset)
 guildname = None
+estTimeDelta = timedelta(hours = -5)
+cstTimeDelta = timedelta(hours = -6)
+mtTimeDelta = timedelta(hours = -7)
+pstTimeDelta = timedelta(hours = -8)
+utcTimeDelta = timedelta(hours = 0)
 
 @bot.event
 async def on_ready():
@@ -22,6 +31,7 @@ async def on_ready():
     try:
 
         synced = await bot.tree.sync()
+        print("bot is synced")
 
     except Exception as e:
 
@@ -53,7 +63,7 @@ def getLogChannel():
 
         if index != -1:
 
-            log = ID[12:]
+            log = ID[13:]
 
     f.close()
 
@@ -72,60 +82,200 @@ def setHours(tz, startHour, endHour):
     f.close()
 
 def getEndHour():
-    pass
+    
+    f = open("%s.txt" % guildname, "r")
+
+    ID = None
+
+    while ID != '':
+
+        ID = f.readline()
+        index = ID.find("End Time: ")
+
+        if index != -1:
+
+            end = ID[10:]
+
+    f.close()
+
+    if 'pm' in end and '12' not in end:
+        end = end[:-3]
+        end24Time = int(end) + 12
+    else:
+        end = end[:-3]
+        end24Time = int(end)
+
+    return end24Time
 
 def getStartHour():
-    pass
+    
+    f = open("%s.txt" % guildname, "r")
+
+    ID = None
+
+    while ID != '':
+
+        ID = f.readline()
+        index = ID.find("Start Time: ")
+
+        if index != -1:
+
+            start = ID[12:]
+
+    f.close()
+
+    if 'pm' in start and '12' not in start:
+        start = start[:-3]
+        start24Time = int(start) + 12
+    else:
+        start = start[:-3]
+        start24Time = int(start)
+
+    return start24Time
+
+def getTimezone():
+    
+    f = open("%s.txt" % guildname, "r")
+
+    ID = None
+
+    while ID != '':
+
+        ID = f.readline()
+        index = ID.find("Timezone: ")
+
+        if index != -1:
+
+            tz = ID[10:]
+
+    f.close()
+
+    tz = tz.rstrip()
+
+    return tz
+
+def setRole(roleID):
+    
+    f = open("%s.txt" % guildname, "a")
+    f.write(f"Role ID: {roleID}\n")
+    f.close()
+
+def getRole():
+
+    role = 0
+
+    f = open("%s.txt" % guildname, "r")
+
+    ID = None
+
+    while ID != '':
+
+        ID = f.readline()
+        index = ID.find("Role ID: ")
+
+        if index != -1:
+
+            role = ID[8:]
+
+    f.close()
+
+    return int(role)
+
+#returns true if currentTime is within quiet hours, false otherwise
+def checkTime(start, end, currentTime):
+    
+    if end < start:
+
+        if currentTime <= end or currentTime >= start:
+
+            return True
+        
+        else:
+
+            return False
+        
+    else:
+
+        if start <= currentTime <= end:
+
+            return True
+        
+        else:
+
+            return False
 
 #bot commands
 @bot.tree.command(name = "setup")
-@app_commands.describe(log = "Log Channel", start = "Start time of quiet hours (ex: 12am)", end = "End time of quiet hours (ex: 12am)", tz = "timezone (ex: EST, CST, PST)")
-async def setup(interaction: discord.Interaction, log: discord.TextChannel, start: str, end: str, tz: str = "utc"):
+@app_commands.describe(log = "Log Channel", start = "Start time of quiet hours (ex: 12am)", end = "End time of quiet hours (ex: 12am)", timezones = "timezone (ex: EST, CST, PST, MST)")
+@app_commands.choices(timezones = [app_commands.Choice(name = "Eastern", value = "EST"), app_commands.Choice(name = "Central", value = "CST"), app_commands.Choice(name = "Pacific", value = 'PST'), app_commands.Choice(name = "Mountain", value = "MT")])
+async def setup(interaction: discord.Interaction, log: discord.TextChannel, start: str, end: str, timezones: app_commands.Choice[str], role: discord.Role):
 
     if interaction.user.guild_permissions.administrator:
 
-        setGuildname(interaction.guild)
+        if 'am' not in start and 'pm' not in start or 'am' not in end and 'pm' not in end:
 
-        log = log.id
+            await interaction.response.send_message(f'ERROR: am or pm not included. Make sure time values end with am or pm. **Ex: 1am**')
 
-        if os.path.exists("%s.txt" % guildname):
+        else:
 
-            os.remove("%s.txt" % guildname)
+            setGuildname(interaction.guild)
+            if os.path.exists("%s.txt" % guildname):
 
-        setLog(log)
+                os.remove("%s.txt" % guildname)
+            
+            setRole(role.id)
 
-        logs_channel = await bot.fetch_channel(getLogChannel())
+            log = log.id
+            setLog(log)
+            logs_channel = await bot.fetch_channel(getLogChannel())
 
-        setHours(tz, start, end)
+            tz = timezones.value
+            setHours(tz, start, end)
 
-        await interaction.response.send_message(f"Setup Complete!\n--------------------\nLogs Channel: {logs_channel}\nTimezone: {tz}\n\
-Quiet Hours Start Time: {start}\nQuiet Hours End Time: {end}\n--------------------")
+            await interaction.response.send_message(f"Setup Complete!\n--------------------\nLogs Channel: {logs_channel}\nTimezone: {tz}\n\
+Quiet Hours Start Time: {start}\nQuiet Hours End Time: {end}\nRole Affected: {role}\n--------------------")
 
     else:
 
         await interaction.response.send_message("You do not have access to this command", ephemeral = True)
-#how to send messages to logs channel
-#logs_channel = await bot.fetch_channel(getLogChannel())
-#await logs_channel.send(f" is for {logs_channel}")
 
-
-#TODO: Adjust this to depend on Timezone, also fix setup command to include timezone and roles n such
 @bot.event
 async def on_message(ctx):
 
     global guildname
     guildname = ctx.guild.name
 
-    logs_channel = await bot.fetch_channel(getLogChannel())
+    if ctx.author.get_role(getRole()) != None:
 
-    if ctx.author != bot.user:
+        logs_channel = await bot.fetch_channel(getLogChannel())
 
-        msgTime = ctx.created_at
-        msgTime = msgTime.strftime("%H")
+        if ctx.author != bot.user:
+            
+            zone = getTimezone()
 
-        if int(msgTime) > 0:
+            if zone == 'EST':
+                zone = estTimeDelta
+            elif zone == 'CST':
+                zone = cstTimeDelta
+            elif zone == 'MST':
+                zone = mtTimeDelta
+            elif zone == 'PST':
+                zone = pstTimeDelta
+            else:
+                zone = utcTimeDelta  
 
-            await logs_channel.send(f"{ctx.author} sent the message: \"{ctx.content}\" at {msgTime}")
+            msgTime = ctx.created_at 
+            msgTime = msgTime.replace(tzinfo = pytz.utc).astimezone(timezone(zone))
+            msgHour = msgTime.strftime("%H")
+            msgTime = msgTime.strftime("%I:%M%p")
+            
+            if msgTime[0] == '0':
 
+                msgTime = msgTime[1:]
+
+            if checkTime(getStartHour(), getEndHour(), int(msgHour)):
+
+                await logs_channel.send(f"{ctx.author} sent the message: \"{ctx.content}\" at {msgTime}")
+                await ctx.delete()
 
 bot.run(TOKEN)
